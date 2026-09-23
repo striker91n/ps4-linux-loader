@@ -1,4 +1,4 @@
-# ![PS4](https://img.shields.io/badge/-PS4-003791?style=flat&logo=PlayStation) Linux Payloads for FW 5.05 - 13.50
+# ![PS4](https://img.shields.io/badge/-PS4-003791?style=flat&logo=PlayStation) Linux Payloads for FW 5.05 - 13.52
 (Southbridge: Aeolia & Belize(2) & Baikal)
 
 **Linux-Payloads** kexec for PlayStation 4.

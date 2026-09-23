@@ -624,7 +624,7 @@
 #define kern_off_sysent 0x1102B70
 #define kern_off_kernel_pmap_store 0x1B2C3A0
 #define kern_off_Starsha_UcodeInfo 0x0
-#define kern_off_gpu_devid_is_9924 0x4AC5A0
+#define kern_off_gpu_devid_is_9924 0x4AC5B0
 #define kern_off_gc_get_fw_info 0x4BAF60
 #define kern_off_pml4pml4i 0x1B2C390
 #define kern_off_dmpml4i 0x1B2C394
