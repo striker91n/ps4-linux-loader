@@ -174,6 +174,38 @@ int read_file(char *path, char **ptr, unsigned long long *sz)
     return 0;
 }
 
+// --- Arm-time disk diagnostic -------------------------------------------------
+// Persist what the loader saw to a file in the Linux boot dir (readable via
+// OrbisOS FTP afterwards). Non-fatal: any failure is ignored, so it can never
+// break the boot. (The post-handoff SCLK state is captured by the kernel's
+// dmesg, which is persisted on disk once Linux boots.)
+static unsigned long long diag_app(char *b, unsigned long long o, const char *s)
+{
+    while (s && *s) b[o++] = *s++;
+    return o;
+}
+static unsigned long long diag_appint(char *b, unsigned long long o, int v)
+{
+    char t[12]; int n = 0;
+    if (v < 0) { b[o++] = '-'; v = -v; }
+    if (v == 0) t[n++] = '0';
+    while (v) { t[n++] = '0' + (v % 10); v /= 10; }
+    while (n) b[o++] = t[--n];
+    return o;
+}
+static void write_loader_diag(const char *cmdline, int vram_mb, unsigned short fw)
+{
+    char buf[1024];
+    unsigned long long o = 0;
+    int fd;
+    o = diag_app(buf, o, "PS4 linux loader diag (v3 live-clock) @ arm-time\n");
+    o = diag_app(buf, o, "fw=");      o = diag_appint(buf, o, (int)fw);     o = diag_app(buf, o, "\n");
+    o = diag_app(buf, o, "vram_mb="); o = diag_appint(buf, o, vram_mb);     o = diag_app(buf, o, "\n");
+    o = diag_app(buf, o, "cmdline="); o = diag_app(buf, o, cmdline ? cmdline : "(null)"); o = diag_app(buf, o, "\n");
+    fd = open("/data/linux/boot/loader-diag.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) { write(fd, buf, o); close(fd); }
+}
+
 // evf_open, evf_cancel, evf_close - some events for reboot
 int evf_open(char *);
 void evf_cancel(int, unsigned long long, unsigned long long);
@@ -408,6 +440,9 @@ int main(void)
     }
 
     // Launch kernel exploit → kernel_main()
+    // Arm-time disk diagnostic (non-fatal).
+    write_loader_diag(cmdline, vram_mb, fw_ver);
+
     kexec(kernel_main, (void *)0);
 
     // Launch reboot watchdog thread, then Linux loader
