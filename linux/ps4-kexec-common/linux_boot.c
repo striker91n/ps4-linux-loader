@@ -405,38 +405,11 @@ static void cpu_quiesce_gate(void *arg)
     *(volatile u64 *)PA_TO_DM(0xe4800e60) |= 0x00100140; // Softreset SDMA/GRBM
 //    udelay(150);
     *(volatile u64 *)PA_TO_DM(0xe4800e60) &= ~0x00100140;
-    // --- GPU clock fix (2nd angle): re-apply pstate/SCLK AFTER the GFX soft-reset ---
-    // sys_kexec()'s set_gpu_freq()/set_pstate() run BEFORE this soft-reset and are wiped
-    // by it (it resets the SCLK DID to the strap value). Apply them here instead.
-    kern.printf("kexec: GPU-clock fns present: set_gpu_freq=%d set_pstate=%d update_vddnp=%d set_cu_power_gate=%d is_9924=%d\n",
-                !!kern.set_gpu_freq, !!kern.set_pstate, !!kern.update_vddnp, !!kern.set_cu_power_gate,
-                (kern.gpu_devid_is_9924 ? !!kern.gpu_devid_is_9924() : 0));
-    kern.printf("kexec: re-applying GPU pstate/SCLK after the GFX soft-reset...\n");
-    if (kern.set_pstate)
-        kern.set_pstate(3);
-    if (kern.set_cu_power_gate)
-        kern.set_cu_power_gate((kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) ? 0x24 : 0x12);
-    if (kern.set_gpu_freq) {
-        if (kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) {
-            kern.set_gpu_freq(1, 853);
-            kern.set_gpu_freq(2, 711);
-            kern.set_gpu_freq(4, 911);
-            kern.set_gpu_freq(5, 800);
-            kern.set_gpu_freq(6, 984);
-        } else {
-            kern.set_gpu_freq(1, 673);
-            kern.set_gpu_freq(2, 609);
-            kern.set_gpu_freq(4, 800);
-            kern.set_gpu_freq(5, 711);
-            kern.set_gpu_freq(6, 711);
-        }
-        kern.set_gpu_freq(0, 800);
-        kern.set_gpu_freq(3, 800);
-        kern.set_gpu_freq(7, 673);
-    }
-    if (kern.update_vddnp)
-        kern.update_vddnp(0x12);
-    kern.printf("kexec: GPU pstate/SCLK re-applied after soft-reset.\n");
+    // GPU clock: SMC/ICC kernel calls are UNSAFE here -- this runs AFTER
+    // cleanup_interrupts() and CPU quiesce, where calling into the SMC hangs the
+    // handoff (black screen). The pstate/SCLK force now happens earlier, in
+    // hook_icc_query_nowait(), while the kernel is still fully alive.
+    kern.printf("kexec: [quiesce] post GFX soft-reset (clock forced live pre-rendezvous).\n");
 
 //    udelay(150);
 
@@ -491,6 +464,39 @@ int hook_icc_query_nowait(u8 *icc_msg)
     fix_acpi_tables((void*)PA_TO_DM(0xe0000), 0xe0000);
 
     kern.printf("ACPI tables fixed\n");
+
+    // --- GPU clock: force pstate/SCLK NOW, in a fully live kernel, immediately before
+    //     the rendezvous/quiesce. sys_kexec()'s calls happen at arm time and are reverted
+    //     long before the handoff; this is the last moment the SMC is usable without
+    //     hanging. Only SMC calls are here -- no MMIO/soft-reset (that stays in the gate).
+    kern.printf("kexec: [live] GPU-clock fns: set_gpu_freq=%d set_pstate=%d update_vddnp=%d set_cu_power_gate=%d is_9924=%d\n",
+                !!kern.set_gpu_freq, !!kern.set_pstate, !!kern.update_vddnp, !!kern.set_cu_power_gate,
+                (kern.gpu_devid_is_9924 ? !!kern.gpu_devid_is_9924() : 0));
+    if (kern.set_pstate)
+        kern.set_pstate(3);
+    if (kern.set_cu_power_gate)
+        kern.set_cu_power_gate((kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) ? 0x24 : 0x12);
+    if (kern.set_gpu_freq) {
+        if (kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) {
+            kern.set_gpu_freq(1, 853);
+            kern.set_gpu_freq(2, 711);
+            kern.set_gpu_freq(4, 911);
+            kern.set_gpu_freq(5, 800);
+            kern.set_gpu_freq(6, 984);
+        } else {
+            kern.set_gpu_freq(1, 673);
+            kern.set_gpu_freq(2, 609);
+            kern.set_gpu_freq(4, 800);
+            kern.set_gpu_freq(5, 711);
+            kern.set_gpu_freq(6, 711);
+        }
+        kern.set_gpu_freq(0, 800);
+        kern.set_gpu_freq(3, 800);
+        kern.set_gpu_freq(7, 673);
+    }
+    if (kern.update_vddnp)
+        kern.update_vddnp(0x12);
+    kern.printf("kexec: [live] GPU pstate/SCLK forced (pre-rendezvous).\n");
 
     // Transition to BSP and halt other cpus
     // smp_no_rendevous_barrier is just nullsub, but it is treated specially by
