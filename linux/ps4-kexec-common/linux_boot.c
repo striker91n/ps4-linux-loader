@@ -405,6 +405,38 @@ static void cpu_quiesce_gate(void *arg)
     *(volatile u64 *)PA_TO_DM(0xe4800e60) |= 0x00100140; // Softreset SDMA/GRBM
 //    udelay(150);
     *(volatile u64 *)PA_TO_DM(0xe4800e60) &= ~0x00100140;
+    // --- GPU clock fix (2nd angle): re-apply the pstate/SCLK AFTER the GFX soft-reset.
+    // The set_gpu_freq()/set_pstate() calls in sys_kexec() run BEFORE this soft-reset,
+    // which resets the SCLK divider (DID) back to the strap value and wipes them.
+    // Applying them here, after the reset and before the jump, should leave the GPU
+    // at the high pstate when Linux takes over.
+    uart_write_str("kexec: Re-applying GPU clock/pstate after soft-reset...\n");
+    if (kern.set_pstate)
+        kern.set_pstate(3);
+    if (kern.set_cu_power_gate)
+        kern.set_cu_power_gate((kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) ? 0x24 : 0x12);
+    if (kern.set_gpu_freq) {
+        if (kern.gpu_devid_is_9924 && kern.gpu_devid_is_9924()) {
+            kern.set_gpu_freq(1, 853);
+            kern.set_gpu_freq(2, 711);
+            kern.set_gpu_freq(4, 911);
+            kern.set_gpu_freq(5, 800);
+            kern.set_gpu_freq(6, 984);
+        } else {
+            kern.set_gpu_freq(1, 673);
+            kern.set_gpu_freq(2, 609);
+            kern.set_gpu_freq(4, 800);
+            kern.set_gpu_freq(5, 711);
+            kern.set_gpu_freq(6, 711);
+        }
+        kern.set_gpu_freq(0, 800);
+        kern.set_gpu_freq(3, 800);
+        kern.set_gpu_freq(7, 673);
+    }
+    if (kern.update_vddnp)
+        kern.update_vddnp(0x12);
+    uart_write_str("kexec: GPU clock/pstate re-applied.\n");
+
 //    udelay(150);
 
     // Enable audio output
